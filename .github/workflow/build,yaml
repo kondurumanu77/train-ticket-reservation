@@ -1,0 +1,81 @@
+name: CI Pipeline for Java Code Deploy
+
+on:
+  push:
+    branches:
+      - main
+
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Select Environment"
+        required: true
+        type: choice
+        options:
+          - dev
+          - test
+          - pre-prod
+          - prod
+
+jobs:
+  builds:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Install Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Maven Validate
+        run: mvn validate
+
+      - name: Maven Compile
+        run: mvn compile
+
+      - name: Maven Test
+        run: mvn test
+
+      - name: Maven Package
+        run: mvn package
+
+      - name: Verify WAR File
+        run: |
+          ls -lh target/
+          find target -name "*.war"
+
+      # Deploy to DEV
+      - name: Deploy to DEV
+        if: github.event.inputs.environment == 'dev'
+        run: |
+          curl -v -u "${{ secrets.DEV_USER }}:${{ secrets.DEV_PASSWORD }}" \
+          -T target/TrainBook-1.0.0-SNAPSHOT.war \
+          "http://${{ secrets.DEV_HOST }}:8080/manager/text/deploy?path=/TrainBook&update=true"
+
+      # Deploy to TEST
+      - name: Deploy to TEST
+        if: github.event.inputs.environment == 'test'
+        run: |
+          curl -v -u "${{ secrets.TEST_USER }}:${{ secrets.TEST_PASSWORD }}" \
+          -T target/TrainBook-1.0.0-SNAPSHOT.war \
+          "http://${{ secrets.TEST_HOST }}:8080/manager/text/deploy?path=/TrainBook&update=true"
+
+      # Deploy to PRE-PROD
+      - name: Deploy to PRE-PROD
+        if: github.event.inputs.environment == 'pre-prod'
+        run: |
+          curl -v -u "${{ secrets.PREPROD_USER }}:${{ secrets.PREPROD_PASSWORD }}" \
+          -T target/TrainBook-1.0.0-SNAPSHOT.war \
+          "http://${{ secrets.PREPROD_HOST }}:8080/manager/text/deploy?path=/TrainBook&update=true"
+
+      # Deploy to PROD
+      - name: Deploy to PROD
+        if: github.event.inputs.environment == 'prod'
+        run: |
+          curl -v -u "${{ secrets.PROD_USER }}:${{ secrets.PROD_PASSWORD }}" \
+          -T target/TrainBook-1.0.0-SNAPSHOT.war \
+          "http://${{ secrets.PROD_HOST }}:8080/manager/text/deploy?path=/TrainBook&update=true"
