@@ -18,64 +18,56 @@ on:
           - prod
 
 jobs:
-  builds:
+  build-and-deploy:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Install Java
+      - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Maven Validate
-        run: mvn validate
-
-      - name: Maven Compile
-        run: mvn compile
-
-      - name: Maven Test
-        run: mvn test
-
-      - name: Maven Package
-        run: mvn package
+      - name: Build Application
+        run: mvn clean package
 
       - name: Verify WAR File
         run: |
           ls -lh target/
-          find target -name "*.war"
+          echo "WAR_FILE=$(find target -name '*.war' | head -1)" >> $GITHUB_ENV
 
-      # Deploy to DEV
-      - name: Deploy to DEV
-        if: github.event.inputs.environment == 'dev'
+      - name: Set Deployment Variables
         run: |
-          curl -v -u "${{ secrets.DEV_USER }}:${{ secrets.DEV_PASSWORD }}" \
-          -T target/TrainBook-1.0.0-SNAPSHOT.war \
-          "http://${{ secrets.DEV_HOST }}:8080/manager/text/deploy?path=/TrainBook&update=true"
+          case "${{ github.event.inputs.environment }}" in
+            dev)
+              echo "HOST=${{ secrets.DEV_HOST }}" >> $GITHUB_ENV
+              echo "USER=${{ secrets.DEV_USER }}" >> $GITHUB_ENV
+              echo "PASSWORD=${{ secrets.DEV_PASSWORD }}" >> $GITHUB_ENV
+              ;;
+            test)
+              echo "HOST=${{ secrets.TEST_HOST }}" >> $GITHUB_ENV
+              echo "USER=${{ secrets.TEST_USER }}" >> $GITHUB_ENV
+              echo "PASSWORD=${{ secrets.TEST_PASSWORD }}" >> $GITHUB_ENV
+              ;;
+            pre-prod)
+              echo "HOST=${{ secrets.PREPROD_HOST }}" >> $GITHUB_ENV
+              echo "USER=${{ secrets.PREPROD_USER }}" >> $GITHUB_ENV
+              echo "PASSWORD=${{ secrets.PREPROD_PASSWORD }}" >> $GITHUB_ENV
+              ;;
+            prod)
+              echo "HOST=${{ secrets.PROD_HOST }}" >> $GITHUB_ENV
+              echo "USER=${{ secrets.PROD_USER }}" >> $GITHUB_ENV
+              echo "PASSWORD=${{ secrets.PROD_PASSWORD }}" >> $GITHUB_ENV
+              ;;
+          esac
 
-      # Deploy to TEST
-      - name: Deploy to TEST
-        if: github.event.inputs.environment == 'test'
+      - name: Deploy to Tomcat
+        if: github.event_name == 'workflow_dispatch'
         run: |
-          curl -v -u "${{ secrets.TEST_USER }}:${{ secrets.TEST_PASSWORD }}" \
-          -T target/TrainBook-1.0.0-SNAPSHOT.war \
-          "http://${{ secrets.TEST_HOST }}:8080/manager/text/deploy?path=/TrainBook&update=true"
-
-      # Deploy to PRE-PROD
-      - name: Deploy to PRE-PROD
-        if: github.event.inputs.environment == 'pre-prod'
-        run: |
-          curl -v -u "${{ secrets.PREPROD_USER }}:${{ secrets.PREPROD_PASSWORD }}" \
-          -T target/TrainBook-1.0.0-SNAPSHOT.war \
-          "http://${{ secrets.PREPROD_HOST }}:8080/manager/text/deploy?path=/TrainBook&update=true"
-
-      # Deploy to PROD
-      - name: Deploy to PROD
-        if: github.event.inputs.environment == 'prod'
-        run: |
-          curl -v -u "${{ secrets.PROD_USER }}:${{ secrets.PROD_PASSWORD }}" \
-          -T target/TrainBook-1.0.0-SNAPSHOT.war \
-          "http://${{ secrets.PROD_HOST }}:8080/manager/text/deploy?path=/TrainBook&update=true"
+          curl -v \
+            -u "$USER:$PASSWORD" \
+            -T "$WAR_FILE" \
+            "http://$HOST:8080/manager/text/deploy?path=/TrainBook&update=true"
