@@ -1,0 +1,73 @@
+name: CI Pipeline for Java Code Deploy
+
+on:
+  push:
+    branches:
+      - main
+
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Select Environment"
+        required: true
+        type: choice
+        options:
+          - dev
+          - test
+          - pre-prod
+          - prod
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Build Application
+        run: mvn clean package
+
+      - name: Verify WAR File
+        run: |
+          ls -lh target/
+          echo "WAR_FILE=$(find target -name '*.war' | head -1)" >> $GITHUB_ENV
+
+      - name: Set Deployment Variables
+        run: |
+          case "${{ github.event.inputs.environment }}" in
+            dev)
+              echo "HOST=${{ secrets.DEV_HOST }}" >> $GITHUB_ENV
+              echo "USER=${{ secrets.DEV_USER }}" >> $GITHUB_ENV
+              echo "PASSWORD=${{ secrets.DEV_PASSWORD }}" >> $GITHUB_ENV
+              ;;
+            test)
+              echo "HOST=${{ secrets.TEST_HOST }}" >> $GITHUB_ENV
+              echo "USER=${{ secrets.TEST_USER }}" >> $GITHUB_ENV
+              echo "PASSWORD=${{ secrets.TEST_PASSWORD }}" >> $GITHUB_ENV
+              ;;
+            pre-prod)
+              echo "HOST=${{ secrets.PREPROD_HOST }}" >> $GITHUB_ENV
+              echo "USER=${{ secrets.PREPROD_USER }}" >> $GITHUB_ENV
+              echo "PASSWORD=${{ secrets.PREPROD_PASSWORD }}" >> $GITHUB_ENV
+              ;;
+            prod)
+              echo "HOST=${{ secrets.PROD_HOST }}" >> $GITHUB_ENV
+              echo "USER=${{ secrets.PROD_USER }}" >> $GITHUB_ENV
+              echo "PASSWORD=${{ secrets.PROD_PASSWORD }}" >> $GITHUB_ENV
+              ;;
+          esac
+
+      - name: Deploy to Tomcat
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          curl -v \
+            -u "$USER:$PASSWORD" \
+            -T "$WAR_FILE" \
+            "http://$HOST:8080/manager/text/deploy?path=/TrainBook&update=true"
